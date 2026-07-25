@@ -34,5 +34,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TrainCarts
-          path: build/libs/*.jar
+          # shadowJar's destinationDirectory is set to the project's build dir root (not the
+          # usual build/libs/), see the shadowJar block in build.gradle.kts.
+          path: build/*.jar
           if-no-files-found: error
