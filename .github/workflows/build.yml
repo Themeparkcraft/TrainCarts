@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build TrainCarts jar
+        # Scoped to the root project (:shadowJar), not the bare `shadowJar` task name, which would
+        # also try to build the optional libs/* submodules (Multiverse/MyWorlds portal providers) -
+        # those pull in extra third-party plugin jars we can't be sure are mirrored for CI.
+        run: ./gradlew :shadowJar --no-daemon
+
+      - name: Upload jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrainCarts
+          path: build/libs/*.jar
+          if-no-files-found: error
