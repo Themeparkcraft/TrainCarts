@@ -261,6 +261,11 @@ public class WheelTrackerMember {
         private boolean _displayInvalid = true; // displayPosition is invalid and must be recalculated
         private boolean _oriented;       // Last-known state whether we are moving in the same direction as orientation or not
         private final RailPath.Position _railPosition = new RailPath.Position(); // Buffered and re-used
+        // Cache of this wheel's last known index of its member's rail inside the group's shared
+        // rails list, validated against that list before being trusted (see update() below) - same
+        // self-healing pattern as MinecartMember#getIndex()'s cache, turning the common case of an
+        // unchanged rail from an O(n) linear scan into an O(1) lookup.
+        private int _cachedRailIndex = -1;
         // Buffered and re-used scratch positions for the neighbouring-rail error correction below -
         // only touched (setLocation/setMotion'd fresh) inside that branch, never retained afterwards,
         // so reusing them avoids two RailPath.Position allocations per wheel on every switch/junction.
@@ -434,13 +439,19 @@ public class WheelTrackerMember {
 
             int railIndex = -1;
             if (!this.member.isDerailed()) {
-                for (int i = 0; i < rails.size(); i++) {
-                    TrackedRail rail = rails.get(i);
-                    if (rail == this.member.getRailTracker().getRail()) {
-                        railIndex = i;
-                        break;
+                TrackedRail myRail = this.member.getRailTracker().getRail();
+                int cachedRailIndex = this._cachedRailIndex;
+                if (cachedRailIndex >= 0 && cachedRailIndex < rails.size() && rails.get(cachedRailIndex) == myRail) {
+                    railIndex = cachedRailIndex;
+                } else {
+                    for (int i = 0; i < rails.size(); i++) {
+                        if (rails.get(i) == myRail) {
+                            railIndex = i;
+                            break;
+                        }
                     }
                 }
+                this._cachedRailIndex = railIndex;
             }
 
             // If this Minecart is derailed, set the wheels to point into the direction of the orientation

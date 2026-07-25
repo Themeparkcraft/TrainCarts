@@ -22,6 +22,13 @@ public abstract class RailLogic {
     protected final boolean alongZ, alongX, alongY, curved;
     private final BlockFace horizontalDir;
     private RailPath railPath;
+    // Scratch buffer for getForwardVelocity()/setForwardVelocity() below - the Position never
+    // escapes either method (read back into a double or copied into the member's velocity vector
+    // immediately), so reusing one instance avoids a RailPath.Position allocation on every call.
+    // Safe even though many RailLogic subclasses (e.g. RailLogicHorizontal's cached per-direction
+    // instances) are shared singletons across every cart using that rail type: physics runs single-
+    // threaded and neither method re-enters itself, so there's no concurrent/nested use of this field.
+    private final RailPath.Position forwardVelocityScratch = new RailPath.Position();
 
     public RailLogic(BlockFace horizontalDirection) {
         this.horizontalDir = horizontalDirection;
@@ -117,7 +124,7 @@ public abstract class RailLogic {
         RailPath.Segment segment = this.getPath().findSegment(member.getEntity().loc.vector(), member.getBlock());
         double dot;
         if (segment != null) {
-            RailPath.Position pos = new RailPath.Position();
+            RailPath.Position pos = this.forwardVelocityScratch;
             pos.setMotion(member.getDirection());
             segment.calcDirection(pos);
             dot = pos.motDot(member.getEntity().vel.vector());
@@ -142,7 +149,7 @@ public abstract class RailLogic {
         // Find segment of path we are at, and set a forward velocity along this segment
         RailPath.Segment segment = this.getPath().findSegment(member.getEntity().loc.vector(), member.getBlock());
         if (segment != null) {
-            RailPath.Position pos = new RailPath.Position();
+            RailPath.Position pos = this.forwardVelocityScratch;
             pos.setMotion(member.getRailTracker().getMotionVector());
             segment.calcDirection(pos);
             member.getEntity().vel.set(pos.motX * force, pos.motY * force, pos.motZ * force);
