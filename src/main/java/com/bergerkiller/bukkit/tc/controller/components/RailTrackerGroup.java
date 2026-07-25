@@ -3,7 +3,6 @@ package com.bergerkiller.bukkit.tc.controller.components;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -597,8 +596,8 @@ public class RailTrackerGroup extends RailTracker {
         }
 
         // Apply found rails to the members themselves
-        // Use a somewhat complex iteration scheme to avoid get(index)
-        // LinkedList does not like the use of indices
+        // Use a somewhat complex iteration scheme to avoid get(index), since result.rails can be
+        // a plain buffer built without random-access indices in mind
         {
             Iterator<TrackedRail> iter = result.rails.iterator();
             if (iter.hasNext()) {
@@ -645,7 +644,11 @@ public class RailTrackerGroup extends RailTracker {
         }
 
         public RailFinderResult test(TrackedRail moveInfo) {
-            return test(moveInfo, new LinkedList<TrackedRail>());
+            // ArrayList, not LinkedList: every operation done on this buffer below is append-to-tail,
+            // remove-from-tail, addAll, or plain Iterator traversal - never anything that benefits from
+            // LinkedList's node-based structure - so ArrayList avoids an extra allocation per element
+            // and iterates with much better cache locality for the same O(1) append/remove-at-end cost.
+            return test(moveInfo, new ArrayList<TrackedRail>());
         }
 
         public RailFinderResult test(TrackedRail moveInfo, List<TrackedRail> buffer) {

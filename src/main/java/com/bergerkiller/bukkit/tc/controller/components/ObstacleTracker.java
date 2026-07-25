@@ -47,6 +47,13 @@ public class ObstacleTracker implements TrainStatusProvider {
     private List<MutexZone> enteredMutexZones = Collections.emptyList();
     private int tickCounter = 0;
 
+    // Reused across update() calls to avoid allocating a new ObstacleFinder (and its backing
+    // obstacle list) every single tick - update() can run multiple times per tick at high speed,
+    // for every train on the server, so this allocation showed up in profiling. Lazily created on
+    // first use so construction timing exactly matches the old per-call `new ObstacleFinder(...)`
+    // (which also isn't safe to do before the group has a head member).
+    private ObstacleFinder pooledFinder;
+
     public ObstacleTracker(MinecartGroup group) {
         this.group = group;
     }
@@ -344,8 +351,15 @@ public class ObstacleTracker implements TrainStatusProvider {
             boolean checkTrains, boolean checkRailObstacles, double trainDistance
     ) {
         // Find obstacles. Update the mutex zone found (train status)
-        ObstacleFinder finder = new ObstacleFinder(Math.min(2000.0, searchAheadDistance),
-                                                   checkTrains, checkRailObstacles, trainDistance);
+        // Reuses a single pooled ObstacleFinder instead of allocating a new one (and a new
+        // backing obstacle list) on every call - see the pooledFinder field javadoc.
+        double cappedDistance = Math.min(2000.0, searchAheadDistance);
+        ObstacleFinder finder = this.pooledFinder;
+        if (finder == null) {
+            finder = this.pooledFinder = new ObstacleFinder(cappedDistance, checkTrains, checkRailObstacles, trainDistance);
+        } else {
+            finder.reset(cappedDistance, checkTrains, checkRailObstacles, trainDistance);
+        }
         List<Obstacle> obstacles = finder.search();
         this.enteredMutexZones = finder.enteredMutexZones;
         return this.lastObstacleSpeedLimit = minimumSpeedLimit(obstacles, deceleration);
@@ -403,18 +417,20 @@ public class ObstacleTracker implements TrainStatusProvider {
     }
 
     /**
-     * Searches for obstacles up ahead on the track. One instance of this class represents
-     * a single search operation and cannot be re-used.
+     * Searches for obstacles up ahead on the track. Each call to {@link #reset} (or the
+     * constructor) starts a fresh search - {@link #getDesiredSpeedLimit} reuses a single
+     * pooled instance across ticks via {@link #reset}, while {@link #findObstaclesAhead}
+     * still allocates a fresh instance per call for callers that expect a one-shot result.
      */
     private class ObstacleFinder {
-        final double distance;
-        final boolean checkTrains;
-        final boolean checkRailObstacles;
-        final double trainDistance;
+        double distance;
+        boolean checkTrains;
+        boolean checkRailObstacles;
+        double trainDistance;
 
         // Take into account that the head minecart has a length also, so we count distance from the edge (half length)
         // TODO: This does not take into account wheel offset!!!
-        final double selfCartOffset;
+        double selfCartOffset;
 
         // The actual minimum distance allowed from the walking point position to any minecarts discovered
         // This takes into account that the start position is halfway the length of the Minecart
@@ -424,9 +440,10 @@ public class ObstacleTracker implements TrainStatusProvider {
         // Two blocks are used to slow down the train, to make it match up to speed with the train up ahead
         // Check for any mutex zones ~2 blocks ahead, and stop before we enter them
         // If a wait distance is set, also check for trains there
-        final double mutexHardDistance;
-        final double mutexSoftDistance;
-        final double checkDistance;
+        // Always 0.0 - never derived from the search parameters, so it never needs resetting.
+        final double mutexHardDistance = 0.0;
+        double mutexSoftDistance;
+        double checkDistance;
 
         // If rail obstacles are found which impose a 0-speed speed limit, this is set to the distance
         // away from the train these are found. Is used to not add too many obstacles that fall after
@@ -445,19 +462,37 @@ public class ObstacleTracker implements TrainStatusProvider {
         // Mutex zones that have been (soft-) entered
         public List<MutexZone> enteredMutexZones = Collections.emptyList();
 
-        // Resulting obstacles
-        List<Obstacle> obstacles = new ArrayList<>();
+        // Resulting obstacles - kept and cleared (not reallocated) across reset() calls, so the
+        // backing array is reused too, not just the List shell.
+        final List<Obstacle> obstacles = new ArrayList<>();
 
         public ObstacleFinder(double distance, boolean checkTrains, boolean checkRailObstacles, double trainDistance) {
+            reset(distance, checkTrains, checkRailObstacles, trainDistance);
+        }
+
+        /**
+         * Re-initializes this finder for a new search, exactly as if a fresh instance had been
+         * constructed - lets {@link ObstacleTracker} reuse a single instance across ticks instead
+         * of allocating a new one (and a new obstacle list) every call.
+         */
+        void reset(double distance, boolean checkTrains, boolean checkRailObstacles, double trainDistance) {
             this.distance = distance;
             this.checkTrains = checkTrains;
             this.checkRailObstacles = checkRailObstacles;
             this.trainDistance = trainDistance;
             this.selfCartOffset = (0.5 * group.head().getEntity().getWidth());
             this.waitDistance = distance + trainDistance;
-            this.mutexHardDistance = 0.0;
             this.mutexSoftDistance = 2.0 + distance;
             this.checkDistance = selfCartOffset + Math.max(mutexSoftDistance, waitDistance) + 1.0;
+
+            this.closestHardRailObstacle = Double.MAX_VALUE;
+            this.lastRailSpeedLimit = Double.MAX_VALUE;
+            this.currentMutex = null;
+            this.currentMutexGroup = null;
+            this.currentMutexHard = false;
+            this.currentMutexSpacing = 0.0;
+            this.enteredMutexZones = Collections.emptyList();
+            this.obstacles.clear();
         }
 
         public List<Obstacle> search() {
