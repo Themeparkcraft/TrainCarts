@@ -261,6 +261,11 @@ public class WheelTrackerMember {
         private boolean _displayInvalid = true; // displayPosition is invalid and must be recalculated
         private boolean _oriented;       // Last-known state whether we are moving in the same direction as orientation or not
         private final RailPath.Position _railPosition = new RailPath.Position(); // Buffered and re-used
+        // Buffered and re-used scratch positions for the neighbouring-rail error correction below -
+        // only touched (setLocation/setMotion'd fresh) inside that branch, never retained afterwards,
+        // so reusing them avoids two RailPath.Position allocations per wheel on every switch/junction.
+        private final RailPath.Position _prevPosition = new RailPath.Position();
+        private final RailPath.Position _nextPosition = new RailPath.Position();
 
         public Wheel(MinecartMember<?> member, boolean front) {
             this.member = member;
@@ -471,7 +476,7 @@ public class WheelTrackerMember {
                 // Too large an error. Check whether railIndex-1 or railIndex+1 are better suited
                 int original_rail_index = railIndex;
                 if (original_rail_index > 0) {
-                    RailPath.Position prev_position = new RailPath.Position();
+                    RailPath.Position prev_position = this._prevPosition;
                     prev_position.setLocation(this.member.getEntity().loc);
                     prev_position.setMotion(member.getRailTracker().getMotionVector());
                     {
@@ -487,7 +492,7 @@ public class WheelTrackerMember {
                     }
                 }
                 if (original_rail_index < (rails.size()-1)) {
-                    RailPath.Position next_position = new RailPath.Position();
+                    RailPath.Position next_position = this._nextPosition;
                     next_position.setLocation(this.member.getEntity().loc);
                     next_position.setMotion(member.getRailTracker().getMotionVector());
                     {

@@ -334,8 +334,8 @@ public class MinecartGroupStore extends ArrayList<MinecartMember<?>> {
             return LinkResult.DIFFERENT_TRACKS;
 
         //append group1 before or after group2?
-        int m1index = g1.indexOf(m1);
-        int m2index = g2.indexOf(m2);
+        int m1index = m1.getIndex(); // == g1.indexOf(m1), but benefits from MinecartMember's index cache
+        int m2index = m2.getIndex(); // == g2.indexOf(m2), but benefits from MinecartMember's index cache
 
         //Validate
         if (!g2.canConnect(m1, m2index) || !g1.canConnect(m2, m1index)) {

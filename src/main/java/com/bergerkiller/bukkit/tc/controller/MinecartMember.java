@@ -132,6 +132,16 @@ public abstract class MinecartMember<T extends CommonMinecart<?>> extends Entity
     private final List<PersistentCartAttribute<? super T>> persistentCartAttributes = new ArrayList<>();
     private Map<UUID, AtomicInteger> collisionIgnoreTimes = new HashMap<>();
     private Vector speedFactor = new Vector(0.0, 0.0, 0.0);
+    // Scratch buffer for calculateSpeedFactor(back, front) - both call sites in
+    // calculateSpeedFactor() immediately copy the result into speedFactor via Vector#add,
+    // so a single reused instance is safe and avoids an allocation twice per cart per tick.
+    private final Vector speedFactorScratch = new Vector(0.0, 0.0, 0.0);
+    // Cache of the last known index of this member inside its group's cart list, validated
+    // against the group before being trusted (see getIndex()) - cart order is stable on the
+    // vast majority of ticks, so this turns the common case from an O(n) ArrayList#indexOf
+    // scan into an O(1) lookup, while never being able to return a stale/wrong index: an
+    // invalid cache always falls back to the original indexOf scan.
+    private int cachedIndex = -1;
     private double roll = 0.0; // Roll is a custom property added, which is not persistently stored.
     private Quaternion cachedOrientation_quat = null;
     private float cachedOrientation_yaw = 0.0f;
@@ -318,9 +328,16 @@ public abstract class MinecartMember<T extends CommonMinecart<?>> extends Entity
     public int getIndex() {
         if (this.group == null) {
             return entity.isRemoved() ? -1 : 0;
-        } else {
-            return this.group.indexOf(this);
         }
+        // Fast path: the cached index is only trusted after confirming the group still has
+        // this exact member at that position - self-healing, can never return a wrong index.
+        int cached = this.cachedIndex;
+        if (cached >= 0 && cached < this.group.size() && this.group.get(cached) == this) {
+            return cached;
+        }
+        int index = this.group.indexOf(this);
+        this.cachedIndex = index;
+        return index;
     }
 
     @Override
@@ -2200,7 +2217,7 @@ public abstract class MinecartMember<T extends CommonMinecart<?>> extends Entity
     }
 
     private final Vector calculateSpeedFactor(MinecartMember<?> back, MinecartMember<?> front) {
-        Vector direction = new Vector();
+        Vector direction = this.speedFactorScratch;
         double gap = calculateGapAndDirection(back, front, direction);
         if (back == this) {
             direction.multiply(-1.0);
