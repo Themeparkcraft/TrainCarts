@@ -269,8 +269,8 @@ public class TCConfig {
         keepChunksLoadedOnlyWhenMoving = config.get("keepChunksLoadedOnlyWhenMoving", false);
 
         config.setHeader("maxKeepChunksLoadedRadius", "\nMaximum radius that can be set for the keep chunks loaded property of a train");
-        config.addHeader("maxKeepChunksLoadedRadius", "The default is radius is 2, which loads a 5x5 chunk area. Avoid abuse, don't make it too big.");
-        maxKeepChunksLoadedRadius = config.get("maxKeepChunksLoadedRadius", 7);
+        config.addHeader("maxKeepChunksLoadedRadius", "Radius 0 loads only the 1x1 chunk area the carts themselves occupy. Avoid abuse, don't make it too big.");
+        maxKeepChunksLoadedRadius = config.get("maxKeepChunksLoadedRadius", 0);
 
         config.setHeader("enableCeilingBlockCollision", "\nWhether to enable or cancel collisions with blocks above minecarts");
         config.addHeader("enableCeilingBlockCollision", "Some constructions depend on these block collisions to block minecarts");

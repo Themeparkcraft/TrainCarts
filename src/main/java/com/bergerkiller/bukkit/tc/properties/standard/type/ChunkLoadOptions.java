@@ -20,8 +20,13 @@ public final class ChunkLoadOptions {
     public static final ChunkLoadOptions DEFAULT = new ChunkLoadOptions(Mode.DISABLED, 2);
     /** Default setting of the chunk load options when parsing the legacy 'false' value */
     public static final ChunkLoadOptions LEGACY_FALSE = new ChunkLoadOptions(Mode.DISABLED, 2);
-    /** Default setting of the chunk load options when parsing the legacy 'true' value */
-    public static final ChunkLoadOptions LEGACY_TRUE = new ChunkLoadOptions(Mode.FULL, 2);
+    /**
+     * Default setting of the chunk load options when parsing the legacy 'true' value - minimal
+     * mode (no entity/redstone simulation, no additional per-chunk buffer) at radius 0 (1x1 chunk
+     * area), rather than the old FULL/radius-2 default that force-loaded a much larger area than
+     * most rides actually need.
+     */
+    public static final ChunkLoadOptions LEGACY_TRUE = new ChunkLoadOptions(Mode.MINIMAL, 0);
 
     private final Mode mode;
     private final int radius;
